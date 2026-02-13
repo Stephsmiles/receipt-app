@@ -3,6 +3,4 @@ pandas
 plotly
 pytesseract
 Pillow
-st-gsheets-connection
-gspread 
-oauth2client
+
