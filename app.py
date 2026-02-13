@@ -1,101 +1,132 @@
 import streamlit as st
 import pandas as pd
-import pytesseract
-from PIL import Image
-import re
 from datetime import date
-import plotly.express as px
+import re
+from PIL import Image
+import pytesseract
 
-# --- DATA HANDLING ---
-DATA_FILE = "company_receipts.csv"
+# --- LOGIN LIST ---
+USER_DB = {"admin": "admin123", "staff": "staff123"}
+
+# --- CONFIG & DATA ---
+st.set_page_config(page_title="Smart Expense Tracker", layout="wide")
+DATA_FILE = "company_data.csv"
 
 def load_data():
     try:
         df = pd.read_csv(DATA_FILE)
-        df['Date'] = pd.to_datetime(df['Date']).dt.date
         return df
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        return pd.DataFrame(columns=["Date", "Employee", "Vendor", "Amount", "Category"])
+    except:
+        return pd.DataFrame(columns=[
+            "Date", "Type", "Account_Num", "Employee", "Vendor", 
+            "Amount", "Payment_Method", "Card_Last4", "Category", 
+            "Details", "Photo_Status"
+        ])
 
-# --- UI SETUP ---
-st.set_page_config(page_title="Corporate Expense Tracker", layout="wide")
-st.title("📂 Business Receipt & Invoice Manager")
+# --- OCR LOGIC ---
+def scan_image(image):
+    text = pytesseract.image_to_string(image)
+    amounts = re.findall(r"\d+\.\d{2}", text)
+    found_amount = float(max(amounts)) if amounts else 0.0
+    card_pattern = re.search(r"(?:\*{4}|Ending in|Account|#)\s*(\d{4})", text, re.IGNORECASE)
+    found_last4 = card_pattern.group(1) if card_pattern else ""
+    acct_pattern = re.search(r"(?:Acct|Account|Cust|ID)[:#\s]+(\d{5,15})", text, re.IGNORECASE)
+    found_acct = acct_pattern.group(1) if acct_pattern else ""
+    return found_amount, found_last4, found_acct
 
-tab1, tab2 = st.tabs(["📥 Data Entry", "📊 Reports & Analytics"])
+# --- AUTHENTICATION ---
+if "authenticated" not in st.session_state:
+    st.title("🔒 Login Required")
+    user = st.text_input("Username")
+    pwd = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if user in USER_DB and USER_DB[user] == pwd:
+            st.session_state["authenticated"] = True
+            st.session_state["user"] = user
+            st.rerun()
+        else:
+            st.error("Invalid credentials")
+    st.stop()
+
+# --- MAIN APP ---
+st.sidebar.write(f"User: **{st.session_state['user']}**")
+if st.sidebar.button("Logout"):
+    del st.session_state["authenticated"]
+    st.rerun()
+
+st.title("🧾 Company Expense Manager")
+tab1, tab2, tab3 = st.tabs(["📸 Add Entry", "📊 Reports", "🛠️ Manage Records"])
 
 with tab1:
-    st.header("New Entry")
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        uploaded_file = st.file_uploader("Upload Receipt/Invoice", type=['jpg', 'png', 'jpeg'])
-        auto_amount = 0.0
-        if uploaded_file:
-            img = Image.open(uploaded_file)
-            st.image(img, caption="Preview", width=400)
-            if st.button("✨ Auto-Fill from Image"):
-                # Simple OCR Logic
-                raw_text = pytesseract.image_to_string(img)
-                prices = re.findall(r"\d+\.\d{2}", raw_text)
-                if prices:
-                    auto_amount = float(max(prices))
-                    st.success(f"Detected: ${auto_amount}")
+    st.header("Step 1: Scan Photo")
+    if 'auto_amount' not in st.session_state: st.session_state['auto_amount'] = 0.0
+    if 'auto_last4' not in st.session_state: st.session_state['auto_last4'] = ""
+    if 'auto_acct' not in st.session_state: st.session_state['auto_acct'] = ""
 
-    with col2:
-        with st.form("entry_form", clear_on_submit=True):
-            emp = st.text_input("Employee Name")
-            vend = st.text_input("Vendor")
-            amt = st.number_input("Amount ($)", value=auto_amount, step=0.01)
-            dt = st.date_input("Date", date.today())
-            cat = st.selectbox("Category", ["Office Supplies", "Software", "Travel", "Meals", "Maintenance"])
-            
-            if st.form_submit_button("Submit to Records"):
-                if emp and vend:
-                    df = load_data()
-                    new_data = pd.DataFrame([[dt, emp, vend, amt, cat]], columns=df.columns)
-                    pd.concat([df, new_data]).to_csv(DATA_FILE, index=False)
-                    st.toast("Record Saved!", icon="✅")
+    uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
+    if uploaded_file and st.button("🔍 Auto-Scan"):
+        amt, last4, acct = scan_image(Image.open(uploaded_file))
+        st.session_state.update({'auto_amount': amt, 'auto_last4': last4, 'auto_acct': acct})
+        st.success("Scan Complete!")
+
+    st.markdown("---")
+    with st.form("entry_form"):
+        doc_type = st.radio("Type", ["Receipt", "Invoice"], horizontal=True)
+        acc_num = st.text_input("Account #", value=st.session_state['auto_acct'])
+        colA, colB = st.columns(2)
+        v_date = colA.date_input("Date", date.today())
+        vendor = colB.text_input("Vendor")
+        colC, colD, colE = st.columns(3)
+        amt = colC.number_input("Amount", value=st.session_state['auto_amount'])
+        pay_m = colD.selectbox("Payment", ["Card", "Cash", "Check", "EFT"])
+        c_last4 = colE.text_input("Card Last 4", value=st.session_state['auto_last4'], max_chars=4)
+        cat = st.selectbox("Category", ["Admin", "Cleaning/Maint.", "Travel", "Catering", "Vendor", "Marketing", "Franchise", "Other"])
+        details = st.text_area("Details")
+        no_p = st.checkbox("NO PHOTO AVAILABLE")
+        
+        if st.form_submit_button("Save"):
+            if not uploaded_file and not no_p: st.error("Photo required")
+            else:
+                df = load_data()
+                new_row = pd.DataFrame([[v_date.strftime('%m/%d/%Y'), doc_type, acc_num, st.session_state['user'], vendor, amt, pay_m, c_last4, cat, details, "Yes"]], columns=df.columns)
+                pd.concat([df, new_row], ignore_index=True).to_csv(DATA_FILE, index=False)
+                st.success("Saved!")
 
 with tab2:
-    st.header("Company Spending Report")
+    st.header("Summary")
     df = load_data()
+    st.dataframe(df, use_container_width=True)
+    st.download_button("📥 Download CSV", data=df.to_csv(index=False), file_name="expenses.csv")
 
+with tab3:
+    st.header("Modify or Delete Entries")
+    df = load_data()
     if not df.empty:
-        # Filters
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            start_date = st.date_input("From", value=date(2024, 1, 1))
-        with c2:
-            end_date = st.date_input("To", value=date.today())
-        with c3:
-            query = st.text_input("Search Employee/Vendor")
-
-        # Filtering Logic
-        filtered = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
-        if query:
-            filtered = filtered[filtered['Employee'].str.contains(query, case=False) | 
-                                filtered['Vendor'].str.contains(query, case=False)]
-
-        # Dashboard Metrics
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Spend", f"${filtered['Amount'].sum():,.2f}")
-        m2.metric("Total Invoices", len(filtered))
-        m3.metric("Avg. Invoice", f"${filtered['Amount'].mean():,.2f}" if len(filtered)>0 else "$0")
-
-        # Visuals
-        st.markdown("---")
-        chart_col, table_col = st.columns([1, 1])
+        # Create a list of labels for the dropdown to pick which row to edit
+        df_display = df.copy()
+        df_display['Label'] = df.index.astype(str) + ": " + df['Vendor'] + " ($" + df['Amount'].astype(str) + ")"
+        selected_label = st.selectbox("Select Record to Edit/Delete", df_display['Label'])
+        index_to_act = int(selected_label.split(":")[0])
         
-        with chart_col:
-            st.subheader("Spending by Category")
-            fig = px.pie(filtered, values='Amount', names='Category', hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
+        row = df.iloc[index_to_act]
+        
+        with st.expander("Edit Selected Record"):
+            new_vendor = st.text_input("Edit Vendor", value=row['Vendor'])
+            new_amt = st.number_input("Edit Amount", value=float(row['Amount']))
+            new_cat = st.selectbox("Edit Category", ["Admin", "Cleaning/Maint.", "Travel", "Catering", "Vendor", "Marketing", "Franchise", "Other"], index=["Admin", "Cleaning/Maint.", "Travel", "Catering", "Vendor", "Marketing", "Franchise", "Other"].index(row['Category']))
+            
+            if st.button("Update Record"):
+                df.at[index_to_act, 'Vendor'] = new_vendor
+                df.at[index_to_act, 'Amount'] = new_amt
+                df.at[index_to_act, 'Category'] = new_cat
+                df.to_csv(DATA_FILE, index=False)
+                st.success("Updated!")
+                st.rerun()
 
-        with table_col:
-            st.subheader("Filtered Records")
-            st.dataframe(filtered, use_container_width=True, hide_index=True)
-
-        # Export Actions
-        st.download_button("📥 Export to CSV", data=filtered.to_csv(index=False), file_name="report.csv")
+        if st.button("🗑️ Delete This Record", help="This cannot be undone!"):
+            df = df.drop(index_to_act)
+            df.to_csv(DATA_FILE, index=False)
+            st.warning("Deleted!")
+            st.rerun()
     else:
-        st.info("No data available yet. Please add a receipt in the first tab.")
+        st.info("No data to manage.")
