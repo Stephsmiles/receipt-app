@@ -1,87 +1,101 @@
 import streamlit as st
 import pandas as pd
+import pytesseract
+from PIL import Image
+import re
 from datetime import date
 import plotly.express as px
 
-# --- LOGIN LIST (Username : Password) ---
-USER_DB = {
-    "admin": "admin123",
-    "staff": "staff123"
-}
-
-# --- APP SETUP ---
-st.set_page_config(page_title="Receipt Tracker", layout="wide")
-DATA_FILE = "receipts.csv"
+# --- DATA HANDLING ---
+DATA_FILE = "company_receipts.csv"
 
 def load_data():
     try:
-        return pd.read_csv(DATA_FILE)
-    except:
+        df = pd.read_csv(DATA_FILE)
+        df['Date'] = pd.to_datetime(df['Date']).dt.date
+        return df
+    except (FileNotFoundError, pd.errors.EmptyDataError):
         return pd.DataFrame(columns=["Date", "Employee", "Vendor", "Amount", "Category"])
 
-# --- LOGIN SCREEN ---
-if "authenticated" not in st.session_state:
-    st.title("🔒 Login Required")
-    user = st.text_input("Username")
-    pwd = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if user in USER_DB and USER_DB[user] == pwd:
-            st.session_state["authenticated"] = True
-            st.session_state["user"] = user
-            st.rerun()
-        else:
-            st.error("Wrong password")
-    st.stop() # Stops the rest of the app from loading
+# --- UI SETUP ---
+st.set_page_config(page_title="Corporate Expense Tracker", layout="wide")
+st.title("📂 Business Receipt & Invoice Manager")
 
-# --- MAIN APP (Only shows if logged in) ---
-st.sidebar.write(f"User: {st.session_state['user']}")
-if st.sidebar.button("Logout"):
-    del st.session_state["authenticated"]
-    st.rerun()
+tab1, tab2 = st.tabs(["📥 Data Entry", "📊 Reports & Analytics"])
 
-st.title("🧾 Business Receipt Tracker")
-
-tab1, tab2 = st.tabs(["📝 Add Receipt", "📊 View Reports"])
-
-# TAB 1: ADD RECEIPT
 with tab1:
-    st.header("Enter New Receipt")
-    with st.form("receipt_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            date_input = st.date_input("Date", date.today())
-            vendor = st.text_input("Vendor (e.g., Walmart)")
-        with col2:
-            amount = st.number_input("Amount ($)", min_value=0.0, step=0.01)
-            category = st.selectbox("Category", ["Supplies", "Travel", "Meals", "Other"])
-        
-        # Taking a photo (Mobile feature)
-        uploaded_file = st.file_uploader("Attach Photo (Optional)", type=['png', 'jpg'])
-
-        if st.form_submit_button("Save Receipt"):
-            df = load_data()
-            new_entry = pd.DataFrame([[date_input, st.session_state['user'], vendor, amount, category]], 
-                                     columns=["Date", "Employee", "Vendor", "Amount", "Category"])
-            # Save to file
-            updated_df = pd.concat([df, new_entry], ignore_index=True)
-            updated_df.to_csv(DATA_FILE, index=False)
-            st.success("Saved!")
-
-# TAB 2: REPORTS
-with tab2:
-    st.header("Search & Reports")
-    df = load_data()
+    st.header("New Entry")
+    col1, col2 = st.columns([1, 1])
     
+    with col1:
+        uploaded_file = st.file_uploader("Upload Receipt/Invoice", type=['jpg', 'png', 'jpeg'])
+        auto_amount = 0.0
+        if uploaded_file:
+            img = Image.open(uploaded_file)
+            st.image(img, caption="Preview", width=400)
+            if st.button("✨ Auto-Fill from Image"):
+                # Simple OCR Logic
+                raw_text = pytesseract.image_to_string(img)
+                prices = re.findall(r"\d+\.\d{2}", raw_text)
+                if prices:
+                    auto_amount = float(max(prices))
+                    st.success(f"Detected: ${auto_amount}")
+
+    with col2:
+        with st.form("entry_form", clear_on_submit=True):
+            emp = st.text_input("Employee Name")
+            vend = st.text_input("Vendor")
+            amt = st.number_input("Amount ($)", value=auto_amount, step=0.01)
+            dt = st.date_input("Date", date.today())
+            cat = st.selectbox("Category", ["Office Supplies", "Software", "Travel", "Meals", "Maintenance"])
+            
+            if st.form_submit_button("Submit to Records"):
+                if emp and vend:
+                    df = load_data()
+                    new_data = pd.DataFrame([[dt, emp, vend, amt, cat]], columns=df.columns)
+                    pd.concat([df, new_data]).to_csv(DATA_FILE, index=False)
+                    st.toast("Record Saved!", icon="✅")
+
+with tab2:
+    st.header("Company Spending Report")
+    df = load_data()
+
     if not df.empty:
-        search = st.text_input("Search (Vendor or Employee)")
-        if search:
-            df = df[df['Vendor'].str.contains(search, case=False) | df['Employee'].str.contains(search, case=False)]
+        # Filters
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            start_date = st.date_input("From", value=date(2024, 1, 1))
+        with c2:
+            end_date = st.date_input("To", value=date.today())
+        with c3:
+            query = st.text_input("Search Employee/Vendor")
+
+        # Filtering Logic
+        filtered = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
+        if query:
+            filtered = filtered[filtered['Employee'].str.contains(query, case=False) | 
+                                filtered['Vendor'].str.contains(query, case=False)]
+
+        # Dashboard Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Spend", f"${filtered['Amount'].sum():,.2f}")
+        m2.metric("Total Invoices", len(filtered))
+        m3.metric("Avg. Invoice", f"${filtered['Amount'].mean():,.2f}" if len(filtered)>0 else "$0")
+
+        # Visuals
+        st.markdown("---")
+        chart_col, table_col = st.columns([1, 1])
         
-        st.dataframe(df, use_container_width=True)
-        st.metric("Total Spent", f"${df['Amount'].sum():,.2f}")
-        
-        # Download Button
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Excel/CSV", data=csv, file_name="receipts.csv")
+        with chart_col:
+            st.subheader("Spending by Category")
+            fig = px.pie(filtered, values='Amount', names='Category', hole=0.4)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with table_col:
+            st.subheader("Filtered Records")
+            st.dataframe(filtered, use_container_width=True, hide_index=True)
+
+        # Export Actions
+        st.download_button("📥 Export to CSV", data=filtered.to_csv(index=False), file_name="report.csv")
     else:
-        st.info("No receipts entered yet.")
+        st.info("No data available yet. Please add a receipt in the first tab.")
