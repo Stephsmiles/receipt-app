@@ -97,91 +97,91 @@ with t1:
 
     st.markdown("---")
     
-    with st.form("entry_form"):
-        st.subheader("2. Transaction Details")
-        
-        # Money In or Money Out?
-        txn_type = st.radio("Nature of Transaction", ["Expense (Money Out)", "Income (Money In)"], horizontal=True)
-        
-        c1, c2 = st.columns(2)
-        # CHANGED: Dropdown to Oval Buttons (Radio horizontal)
-        doc_type = c1.radio("Document Type", ["Receipt", "Invoice", "Statement"], horizontal=True)
-        status = c2.selectbox("Payment Status", ["Paid", "Unpaid / Pending", "Overdue"])
-        
-        c3, c4 = st.columns(2)
-        # CHANGED: Date format to MM/DD/YYYY in display
-        v_date = c3.date_input("Transaction Date", date.today(), format="MM/DD/YYYY")
-        
-        # Label changes based on context
-        if "Expense" in txn_type:
-            entity_label = "Vendor (Who did we pay?)"
-        else:
-            entity_label = "Customer (Who paid us?)"
-        entity = c4.text_input(entity_label)
-        
-        acc_num = st.text_input("Invoice/Account #", value=st.session_state['scan_acc'])
+    # Removed st.form to allow real-time calculations
+    st.subheader("2. Transaction Details")
+    
+    # Money In or Money Out?
+    txn_type = st.radio("Nature of Transaction", ["Expense (Money Out)", "Income (Money In)"], horizontal=True)
+    
+    c1, c2 = st.columns(2)
+    # CHANGED: Dropdown to Oval Buttons (Radio horizontal)
+    doc_type = c1.radio("Document Type", ["Receipt", "Invoice", "Statement"], horizontal=True)
+    status = c2.selectbox("Payment Status", ["Paid", "Unpaid / Pending", "Overdue"])
+    
+    c3, c4 = st.columns(2)
+    # CHANGED: Date format to MM/DD/YYYY in display
+    v_date = c3.date_input("Transaction Date", date.today(), format="MM/DD/YYYY")
+    
+    # Label changes based on context
+    if "Expense" in txn_type:
+        entity_label = "Vendor (Who did we pay?)"
+    else:
+        entity_label = "Customer (Who paid us?)"
+    entity = c4.text_input(entity_label)
+    
+    acc_num = st.text_input("Invoice/Account #", value=st.session_state['scan_acc'])
 
-        st.markdown("### 3. Financial Breakdown")
-        # CHANGED: Added Sub-Total, Tax, Fees fields
-        fc1, fc2, fc3 = st.columns(3)
-        sub_total = fc1.number_input("Sub-Total ($)", value=st.session_state['scan_amt'], min_value=0.0)
-        tax = fc2.number_input("Taxes Total ($)", min_value=0.0)
-        fees = fc3.number_input("Fees Total ($)", min_value=0.0)
-        
-        # Auto-calculate Total
-        total_amount = sub_total + tax + fees
-        st.metric("Total Transaction Amount", f"${total_amount:,.2f}")
+    st.markdown("### 3. Financial Breakdown")
+    # CHANGED: Added Sub-Total, Tax, Fees fields
+    fc1, fc2, fc3 = st.columns(3)
+    sub_total = fc1.number_input("Sub-Total ($)", value=st.session_state['scan_amt'], min_value=0.0)
+    tax = fc2.number_input("Taxes Total ($)", min_value=0.0)
+    fees = fc3.number_input("Fees Total ($)", min_value=0.0)
+    
+    # Auto-calculate Total
+    total_amount = sub_total + tax + fees
+    st.metric("Total Transaction Amount", f"${total_amount:,.2f}")
 
-        c_pay, c_last4 = st.columns(2)
-        pay_m = c_pay.selectbox("Method", ["Business Card", "Cash", "Check", "EFT/Wire", "Credit"])
+    c_pay, c_last4 = st.columns(2)
+    pay_m = c_pay.selectbox("Method", ["Business Card", "Cash", "Check", "EFT/Wire", "Credit"])
+    
+    if pay_m == "Business Card":
+        l4_digits = c_last4.text_input("Last 4 Digits", value=st.session_state['scan_l4'])
+    else:
+        l4_digits = "N/A"
+    
+    # Dynamic Categories
+    if "Expense" in txn_type:
+        cat_list = ["Operational", "COGS", "Payroll", "Marketing", "Utilities", "Travel", "Maintenance", "Tax", "Other"]
+    else:
+        cat_list = ["Sales Revenue", "Service Income", "Refund/Credit", "Interest", "Other"]
         
-        if pay_m == "Business Card":
-            l4_digits = c_last4.text_input("Last 4 Digits", value=st.session_state['scan_l4'])
+    category = st.selectbox("Chart of Accounts (Category)", cat_list)
+    details = st.text_area("Memo / Description")
+    
+    if st.button("Post to Ledger"):
+        final_type = "Expense" if "Expense" in txn_type else "Income"
+        
+        df = load_data()
+        # CHANGED: Date saved as string MM/DD/YYYY
+        date_str = v_date.strftime('%m/%d/%Y')
+        
+        new_row = pd.DataFrame([[
+            date_str, final_type, doc_type, status, acc_num, 
+            st.session_state['user'], entity, sub_total, tax, fees, total_amount, pay_m, 
+            l4_digits, category, details
+        ]], columns=df.columns)
+        
+        # Save locally
+        if os.path.exists(DATA_FILE):
+            new_row.to_csv(DATA_FILE, mode='a', header=False, index=False)
         else:
-            l4_digits = "N/A"
+            new_row.to_csv(DATA_FILE, index=False)
         
-        # Dynamic Categories
-        if "Expense" in txn_type:
-            cat_list = ["Operational", "COGS", "Payroll", "Marketing", "Utilities", "Travel", "Maintenance", "Tax", "Other"]
-        else:
-            cat_list = ["Sales Revenue", "Service Income", "Refund/Credit", "Interest", "Other"]
-            
-        category = st.selectbox("Chart of Accounts (Category)", cat_list)
-        details = st.text_area("Memo / Description")
+        st.success("✅ Transaction Posted Successfully!")
         
-        if st.form_submit_button("Post to Ledger"):
-            final_type = "Expense" if "Expense" in txn_type else "Income"
-            
-            df = load_data()
-            # CHANGED: Date saved as string MM/DD/YYYY
-            date_str = v_date.strftime('%m/%d/%Y')
-            
-            new_row = pd.DataFrame([[
-                date_str, final_type, doc_type, status, acc_num, 
-                st.session_state['user'], entity, sub_total, tax, fees, total_amount, pay_m, 
-                l4_digits, category, details
-            ]], columns=df.columns)
-            
-            # Save locally
-            if os.path.exists(DATA_FILE):
-                new_row.to_csv(DATA_FILE, mode='a', header=False, index=False)
-            else:
-                new_row.to_csv(DATA_FILE, index=False)
-            
-            st.success("✅ Transaction Posted Successfully!")
-            
-            # Email Alert Logic (Only for Unpaid Invoices)
-            if doc_type == "Invoice" and status == "Unpaid / Pending":
-                try:
-                    msg = EmailMessage()
-                    msg.set_content(f"New Unpaid Invoice Logged:\n\nEntity: {entity}\nTotal Amount: ${total_amount}\nDue Date: {date_str}")
-                    msg['Subject'] = "Action Required: Unpaid Invoice"
-                    msg['From'] = MY_EMAIL
-                    msg['To'] = RECEIVER_EMAIL
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
-                        s.login(MY_EMAIL, MY_PASSWORD)
-                        s.send_message(msg)
-                except: pass
+        # Email Alert Logic (Only for Unpaid Invoices)
+        if doc_type == "Invoice" and status == "Unpaid / Pending":
+            try:
+                msg = EmailMessage()
+                msg.set_content(f"New Unpaid Invoice Logged:\n\nEntity: {entity}\nTotal Amount: ${total_amount}\nDue Date: {date_str}")
+                msg['Subject'] = "Action Required: Unpaid Invoice"
+                msg['From'] = MY_EMAIL
+                msg['To'] = RECEIVER_EMAIL
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+                    s.login(MY_EMAIL, MY_PASSWORD)
+                    s.send_message(msg)
+            except: pass
 
 # --- TAB 2: FINANCIAL DASHBOARD ---
 with t2:
