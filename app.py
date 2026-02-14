@@ -10,9 +10,9 @@ from email.message import EmailMessage
 
 --- EMAIL SETTINGS ---
 Update these with your real info
-MY_EMAIL = "your-email@gmail.com"
-MY_PASSWORD = "abcd efgh ijkl mnop"
-RECEIVER_EMAIL = "your-email@gmail.com"
+MY_EMAIL = "smiles4j41@gmail.com"
+MY_PASSWORD = "kpnq ccpd ekrf stpo"
+RECEIVER_EMAIL = "smiles4j41@gmail.com"
 
 --- CONFIGURATION ---
 USER_DB = {"admin": "admin123", "staff": "staff123"}
