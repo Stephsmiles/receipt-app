@@ -8,7 +8,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 
---- EMAIL SETTINGS ---
+
 Update these with your real info
 MY_EMAIL = "smiles4j41@gmail.com"
 MY_PASSWORD = "kpnq ccpd ekrf stpo"
