@@ -14,12 +14,12 @@ MY_EMAIL = "smiles4j41@gmail.com"
 MY_PASSWORD = "kpnq ccpd ekrf stpo"
 RECEIVER_EMAIL = "smiles4j41@gmail.com"
 
---- CONFIGURATION ---
+
 USER_DB = {"admin": "admin123", "staff": "staff123"}
 st.set_page_config(page_title="Bookkeeping Ledger", layout="wide")
 DATA_FILE = "accounting_data.csv"
 
---- DATA FUNCTIONS ---
+
 def load_data():
 if os.path.exists(DATA_FILE):
 return pd.read_csv(DATA_FILE)
@@ -49,7 +49,7 @@ if a: acct = a.group(1)
 except: pass
 return amt, last4, acct
 
---- LOGIN SCREEN ---
+
 if "auth" not in st.session_state:
 st.title("🔒 Accounting Login")
 u = st.text_input("Username")
@@ -60,12 +60,11 @@ st.session_state.update({"auth": True, "user": u})
 st.rerun()
 st.stop()
 
---- MAIN APP ---
 st.title("📚 Corporate Bookkeeping & Tracker")
 
 t1, t2, t3 = st.tabs(["📝 Journal Entry", "📈 P&L Dashboard", "🗃️ General Ledger"])
 
---- TAB 1: DATA ENTRY ---
+
 with t1:
 if 'scan_amt' not in st.session_state:
 st.session_state.update({'scan_amt': 0.0, 'scan_l4': "", 'scan_acc': ""})
