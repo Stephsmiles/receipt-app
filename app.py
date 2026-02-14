@@ -9,7 +9,7 @@ import smtplib
 from email.message import EmailMessage
 
 
-Update these with your real info
+
 MY_EMAIL = "smiles4j41@gmail.com"
 MY_PASSWORD = "kpnq ccpd ekrf stpo"
 RECEIVER_EMAIL = "smiles4j41@gmail.com"
